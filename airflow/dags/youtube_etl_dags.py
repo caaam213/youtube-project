@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 from airflow.operators.python_operator import PythonOperator
 
 
-sys.path.append("/opt/airflow")
-from tasks.youtube_extraction import extract_youtube_data
+sys.path.insert(0, "/opt/airflow/")
+from tasks import youtube_transform, youtube_extraction, youtube_load
 
 default_args = {
     "owner": "airflow",
@@ -31,15 +31,35 @@ dag = DAG(
     catchup=False,
 )
 
+keyword = "learn german"
+
 # Data extraction
 extraction_task = PythonOperator(
     task_id="extract_data_from_youtube",
-    python_callable=extract_youtube_data,
+    python_callable=youtube_extraction.extract_youtube_data,
     op_kwargs={
         "api_key": os.getenv("YOUTUBE_API_KEY"),
-        "keyword": "learn german",
+        "keyword": keyword,
     },  # TODO : Create a file where keywords are
     dag=dag,
 )
 
-extraction_task
+# Data transformation
+transformation_task = PythonOperator(
+    task_id="transform_youtube_data",
+    python_callable=youtube_transform.process_data,
+    op_kwargs={
+        "keyword": keyword,
+    },
+    dag=dag,
+)
+
+# Load data
+load_task = PythonOperator(
+    task_id="load_youtube_data",
+    python_callable=youtube_load.load_data_on_s3,
+    op_kwargs={"keyword": keyword, "bucket": "youtube-bucket-cam"},
+    dag=dag,
+)
+
+extraction_task >> transformation_task >> load_task
